@@ -1,0 +1,76 @@
+#define BLYNK_TEMPLATE_ID   "TMPLxxxxxx"
+#define BLYNK_TEMPLATE_NAME "ProyekIoT"
+#define BLYNK_AUTH_TOKEN    "Token_Blynk_Anda"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <DHT.h>
+#include <ESP32Servo.h>
+
+// Konfigurasi WiFi
+char ssid[] = "Nama_WiFi";
+char pass[] = "Password_WiFi";
+
+// Definisi Pin
+#define DHTPIN 2
+#define DHTTYPE DHT11
+#define TRIG_PIN 9
+#define ECHO_PIN 8
+#define RELAY_PIN 13
+#define SERVO_PIN 5
+
+DHT dht(DHTPIN, DHTTYPE);
+Servo myservo;
+BlynkTimer timer;
+
+// Fungsi kontrol Relay dari Blynk (Button di V3)
+BLYNK_WRITE(V3) {
+  int value = param.asInt();
+  digitalWrite(RELAY_PIN, value);
+}
+
+// Fungsi kontrol Servo dari Blynk (Slider di V4)
+BLYNK_WRITE(V4) {
+  int pos = param.asInt();
+  myservo.write(pos);
+}
+
+void sendSensorData() {
+  // 1. Baca DHT
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+  
+  // 2. Baca Ultrasonik
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long durasi = pulseIn(ECHO_PIN, HIGH);
+  int jarak = durasi * 0.034 / 2;
+
+  // Kirim ke Virtual Pin Blynk
+  Blynk.virtualWrite(V0, t); // Suhu
+  Blynk.virtualWrite(V1, h); // Kelembapan
+  Blynk.virtualWrite(V2, jarak); // Jarak
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  
+  dht.begin();
+  myservo.attach(SERVO_PIN);
+  
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+  
+  // Setting interval pengiriman data (misal 2 detik sekali)
+  timer.setInterval(2000L, sendSensorData);
+}
+
+void loop() {
+  Blynk.run();
+  timer.run();
+}
