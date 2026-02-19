@@ -1,0 +1,91 @@
+#include <WiFi.h>              // Ganti ke <WiFiS3.h> jika pakai Uno R4 WiFi
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
+#include <ArduinoJson.h>
+#include <DHT.h>
+
+// 1. Konfigurasi Koneksi
+const char* ssid = "IDN";
+const char* password = "idnmantab";
+#define BOTtoken "8418882170:AAEyEkDhXPHqENEjYDGTdcBXYv5QAZhyoP0"
+#define CHAT_ID " 6428819906"
+
+// 2. Definisi Pin & Sensor
+#define DHTPIN 2
+#define DHTTYPE DHT11
+#define RELAY_PIN 13
+
+DHT dht(DHTPIN, DHTTYPE);
+WiFiClientSecure client;
+UniversalTelegramBot bot(BOTtoken, client);
+
+// Variabel waktu agar tidak membebani server Telegram
+unsigned long waktuTerakhirCek;
+const unsigned long intervalCek = 1000; 
+
+void handleNewMessages(int numNewMessages) {
+  for (int i = 0; i < numNewMessages; i++) {
+    String chat_id = String(bot.messages[i].chat_id);
+    if (chat_id != CHAT_ID) continue; 
+
+    String text = bot.messages[i].text;
+
+    if (text == "/start") {
+      String welcome = "Selamat datang di Kontrol IoT.\n\n";
+      welcome += "/lampu_on : Menyalakan Relay\n";
+      welcome += "/lampu_off : Mematikan Relay\n";
+      welcome += "/status : Cek Suhu & Kelembapan";
+      bot.sendMessage(chat_id, welcome, "");
+    }
+
+    // Kontrol Relay
+    if (text == "/lampu_on") {
+      digitalWrite(RELAY_PIN, HIGH);
+      bot.sendMessage(chat_id, "Lampu dinyalakan! 💡 ", "");
+    }
+
+    if (text == "/lampu_off") {
+      digitalWrite(RELAY_PIN, LOW);
+      bot.sendMessage(chat_id, "Lampu dimatikan! 💤 ", "");
+    }
+
+    // Baca Data DHT11
+    if (text == "/status") {
+      float t = dht.readTemperature();
+      float h = dht.readHumidity();
+      
+      String pesan = "Kondisi Ruangan:\n";
+      pesan += " 🌡️ Suhu: " + String(t) + " *C\n";
+      pesan += " ❄️ Kelembapan: " + String(h) + " %";
+      bot.sendMessage(chat_id, pesan, "");
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);
+  dht.begin();
+
+  WiFi.begin(ssid, password);
+  client.setInsecure(); // Penting untuk koneksi Telegram tanpa ribet sertifikat
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Terhubung!");
+}
+
+void loop() {
+  // Cek pesan masuk setiap 1 detik
+  if (millis() > waktuTerakhirCek + intervalCek) {
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    while(numNewMessages) {
+      handleNewMessages(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+    waktuTerakhirCek = millis();
+  }
+}
