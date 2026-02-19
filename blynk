@@ -1,5 +1,5 @@
 #define BLYNK_TEMPLATE_ID   "TMPLxxxxxx"
-#define BLYNK_TEMPLATE_NAME "ProyekIoT"
+#define BLYNK_TEMPLATE_NAME "SmartHomeESP32"
 #define BLYNK_AUTH_TOKEN    "Token_Blynk_Anda"
 
 #include <WiFi.h>
@@ -11,36 +11,47 @@
 char ssid[] = "Nama_WiFi";
 char pass[] = "Password_WiFi";
 
-// Definisi Pin
-#define DHTPIN 2
+// Definisi Pin sesuai rangkaian Anda
+#define DHTPIN 2          //
 #define DHTTYPE DHT11
-#define TRIG_PIN 9
-#define ECHO_PIN 8
-#define RELAY_PIN 13
-#define SERVO_PIN 5
+#define RELAY_PIN 13      //
+#define TRIG_PIN 9        //
+#define ECHO_PIN 8        //
+#define SERVO_PIN 5       // Pin PWM untuk Servo
 
 DHT dht(DHTPIN, DHTTYPE);
-Servo myservo;
+Servo pintuServo;
 BlynkTimer timer;
 
-// Fungsi kontrol Relay dari Blynk (Button di V3)
+// Fungsi Manual: Kontrol Relay Lampu (Button V3)
 BLYNK_WRITE(V3) {
-  int value = param.asInt();
-  digitalWrite(RELAY_PIN, value);
+  digitalWrite(RELAY_PIN, param.asInt());
 }
 
-// Fungsi kontrol Servo dari Blynk (Slider di V4)
+// Fungsi Manual: Buka/Tutup Pintu (Button V4)
 BLYNK_WRITE(V4) {
-  int pos = param.asInt();
-  myservo.write(pos);
+  if (param.asInt() == 1) bukaPintu();
+  else tutupPintu();
 }
 
-void sendSensorData() {
-  // 1. Baca DHT
+void bukaPintu() {
+  pintuServo.write(90); 
+  Blynk.virtualWrite(V4, 1);
+  Serial.println("Pintu Dibuka");
+}
+
+void tutupPintu() {
+  pintuServo.write(0);
+  Blynk.virtualWrite(V4, 0);
+  Serial.println("Pintu Ditutup");
+}
+
+void updateSistem() {
+  // 1. Baca Sensor Lingkungan
   float t = dht.readTemperature();
   float h = dht.readHumidity();
   
-  // 2. Baca Ultrasonik
+  // 2. Baca Jarak Ultrasonik
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
   digitalWrite(TRIG_PIN, HIGH);
@@ -49,10 +60,19 @@ void sendSensorData() {
   long durasi = pulseIn(ECHO_PIN, HIGH);
   int jarak = durasi * 0.034 / 2;
 
-  // Kirim ke Virtual Pin Blynk
-  Blynk.virtualWrite(V0, t); // Suhu
-  Blynk.virtualWrite(V1, h); // Kelembapan
+  // 3. Logika Pintu Otomatis (Jika jarak < 30 cm)
+  if (jarak > 0 && jarak < 30) {
+    bukaPintu();
+    // Pintu akan menutup otomatis setelah 3 detik jika tidak ada objek
+  }
+
+  // 4. Kirim Data ke Dashboard Blynk
+  Blynk.virtualWrite(V0, t);     // Suhu
+  Blynk.virtualWrite(V1, h);     // Kelembapan
   Blynk.virtualWrite(V2, jarak); // Jarak
+  
+  // Tampilkan di Serial Monitor untuk Debugging
+  Serial.printf("Suhu: %.1f, Jarak: %d cm\n", t, jarak);
 }
 
 void setup() {
@@ -62,12 +82,12 @@ void setup() {
   pinMode(ECHO_PIN, INPUT);
   
   dht.begin();
-  myservo.attach(SERVO_PIN);
+  pintuServo.attach(SERVO_PIN);
   
   Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
   
-  // Setting interval pengiriman data (misal 2 detik sekali)
-  timer.setInterval(2000L, sendSensorData);
+  // Update data setiap 2 detik
+  timer.setInterval(2000L, updateSistem);
 }
 
 void loop() {
